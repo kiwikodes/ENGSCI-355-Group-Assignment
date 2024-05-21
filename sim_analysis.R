@@ -23,12 +23,12 @@ data$SimTime_h = as.numeric(data$SimTime_h)
 # Only works with the filter on line 31, and the na.rm on line 34 (need to look at)
 P1 = data %>%
   group_by(Replication, Object) %>%
-  summarise(
+  reframe(
     first_event_time = first(EventTime),
     end_event_time = first(EventTime[Event %in% c("Wards.admission", "patient-leave")]),
     time_diff = end_event_time - first_event_time,
     .groups = 'drop'
-  ) %>% filter(!is.na(time_diff))
+  )
 
 P1$time_diff = sort(P1$time_diff)
 P1$time_diff %>% quantile(P1$time_diff, probs=0.95, na.rm=TRUE)
@@ -51,13 +51,12 @@ mean(P2$time_diff)
 # The time between requesting a transit (starting to wait for an orderly to be assigned) and starting being
 # picked up, should be less than 20 minutes on average
 P3 = data %>%
-  filter(Event %in% c("PatientTransit.wait-for-assignment", "PatientTransit.pickup")) %>%
-  arrange(Object, EventTime) %>%
-  group_by(Object) %>%
-  mutate(event_id = cumsum(Event == "PatientTransit.wait-for-assignment")) %>%
-  group_by(Object, event_id) %>%
+  group_by(Replication, Object) %>%
   reframe(
-    time_diff = diff(EventTime[Event %in% c("PatientTransit.wait-for-assignment", "PatientTransit.pickup")])
+    first_event_time = first(EventTime[Event %in% c("PatientTransit.wait-for-assignment")]),
+    end_event_time = first(EventTime[Event %in% c("PatientTransit.pickup")]),
+    time_diff = end_event_time - first_event_time,
+    .groups = 'drop'
   )
 
 mean(P3$time_diff)
@@ -72,7 +71,7 @@ P4 = P4 %>%
          next_event_time = lead(EventTime)) %>%
   filter(next_event == "Wards.observation")
 
-P4 <- P4 %>%
+P4 = P4 %>%
   mutate(time_diff = next_event_time - EventTime - 0.5)
 
 mean(P4$time_diff)
