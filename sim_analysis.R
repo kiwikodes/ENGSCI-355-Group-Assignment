@@ -36,8 +36,17 @@ P1$time_diff %>% quantile(P1$time_diff, probs=0.95, na.rm=TRUE)
 
 # The time between needing to be observed and starting an observation in the ED, should be less than 2
 # minutes on average.
+P2 = data %>% arrange(Object, EventTime)
+P2 = P2 %>%
+  group_by(Replication,Object) %>%
+  mutate(next_event = lead(Event), 
+         next_event_time = lead(EventTime)) %>%
+  filter(next_event == "ED.observation")
 
-## NEED TO COMPLETE
+P2 <- P2 %>%
+  mutate(time_diff = next_event_time - EventTime - 0.5)
+
+mean(P2$time_diff)
 
 # The time between requesting a transit (starting to wait for an orderly to be assigned) and starting being
 # picked up, should be less than 20 minutes on average
@@ -56,8 +65,17 @@ mean(P3$time_diff)
 
 # The time between needing to be observed and starting an observation in the Wards, should be less than
 # 15 minutes 95% of the time.
+P4 = data %>% arrange(Object, EventTime)
+P4 = P4 %>%
+  group_by(Replication,Object) %>%
+  mutate(next_event = lead(Event), 
+         next_event_time = lead(EventTime)) %>%
+  filter(next_event == "Wards.observation")
 
-## NEED TO COMPLETE
+P4 <- P4 %>%
+  mutate(time_diff = next_event_time - EventTime - 0.5)
+
+mean(P4$time_diff)
 
 # The time spent waiting for a test should be less than 5 minutes on average
 P5 = data %>%
