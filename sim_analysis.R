@@ -43,7 +43,7 @@ P2 = P2 %>%
          next_event_time = lead(EventTime)) %>%
   filter(next_event == "ED.observation")
 
-P2 = P2 %>%
+P2 <- P2 %>%
   mutate(time_diff = next_event_time - EventTime - 0.5)
 
 mean(P2$time_diff)
@@ -80,7 +80,7 @@ mean(P4$time_diff)
 P5 = data %>%
   filter(Event %in% c("Wards.wait-for-test", "Wards.perform-test")) %>%
   group_by(Replication, Object) %>%
-  summarise(time_diff = diff(range(EventTime[Event %in% c("Wards.wait-for-test", "Wards.perform-test")])),
+  reframe(time_diff = diff(range(EventTime[Event %in% c("Wards.wait-for-test", "Wards.perform-test")])),
             .groups = 'drop')
 
 mean(P5$time_diff)
