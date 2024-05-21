@@ -43,7 +43,7 @@ P2 = P2 %>%
          next_event_time = lead(EventTime)) %>%
   filter(next_event == "ED.observation")
 
-P2 <- P2 %>%
+P2 = P2 %>%
   mutate(time_diff = next_event_time - EventTime - 0.5)
 
 mean(P2$time_diff)
