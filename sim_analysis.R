@@ -8,7 +8,7 @@ nullStrings = c("this.SimTime/1[h]",  "this.obj",
 data = read.table("complete_model-patientlogger_and_orderly/complete_model-patient-event-logger.log", 
                   sep="\t", 
                   col.names=c('SimTime_h', 'Scenario', 'Replication', 'Object', 'Event', 'EventTime'), 
-                  skip=16, 
+                  skip=15, 
                   na.strings=nullStrings, 
                   skipNul=TRUE)
 
