@@ -25,7 +25,7 @@ P1 = data %>%
   group_by(Replication, Object) %>%
   reframe(
     first_event_time = first(EventTime),
-    end_event_time = first(EventTime[Event %in% c("Wards.admission", "patient-leave")]),
+    end_event_time = first(EventTime[Event %in% c("Wards.ward-stay", "patient-leave")]),
     time_diff = end_event_time - first_event_time,
     .groups = 'drop'
   )
@@ -33,6 +33,7 @@ P1 = data %>%
 P1$time_diff = sort(P1$time_diff)
 P1$time_diff %>% quantile(P1$time_diff, probs=0.95, na.rm=TRUE)
 
+# 0.1037965
 
 # The time between needing to be observed and starting an observation in the ED, should be less than 2
 # minutes on average.
@@ -43,10 +44,12 @@ P2 = P2 %>%
          next_event_time = lead(EventTime)) %>%
   filter(next_event == "ED.observation")
 
-P2 <- P2 %>%
+P2 = P2 %>%
   mutate(time_diff = next_event_time - EventTime - 0.5)
 
 mean(P2$time_diff)
+
+#0.01523401
 
 # The time between requesting a transit (starting to wait for an orderly to be assigned) and starting being
 # picked up, should be less than 20 minutes on average
@@ -61,6 +64,7 @@ P3 = data %>%
 
 mean(P3$time_diff)
 
+#0.1561577
 
 # The time between needing to be observed and starting an observation in the Wards, should be less than
 # 15 minutes 95% of the time.
@@ -72,9 +76,12 @@ P4 = P4 %>%
   filter(next_event == "Wards.observation")
 
 P4 = P4 %>%
-  mutate(time_diff = next_event_time - EventTime - 0.5)
+  mutate(time_diff = next_event_time - EventTime - 2)
 
-mean(P4$time_diff)
+quantile(P4$time_diff, 0.95)
+
+#      95% 
+#0.2058915
 
 # The time spent waiting for a test should be less than 5 minutes on average
 P5 = data %>%
@@ -84,3 +91,4 @@ P5 = data %>%
             .groups = 'drop')
 
 mean(P5$time_diff)
+# 0.1037965
