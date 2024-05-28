@@ -2,93 +2,113 @@ require(dplyr)
 library(data.table)
 
 
-nullStrings = c("this.SimTime/1[h]",  "this.obj",
-                "[Simulation].ReplicationNumber", "this.obj.TotalTime / 1[h]")
+# Read and preprocess data
+naStrings = c('this.SimTime/1[h]', 'this.obj',
+                '[Simulation].ReplicationNumber', 'this.obj.TotalTime / 1[h]')
 
-data = read.table("complete_model-patientlogger_and_orderly/complete_model-patient-event-logger.log", 
-                  sep="\t", 
-                  col.names=c('SimTime_h', 'Scenario', 'Replication', 'Object', 'Event', 'EventTime'), 
-                  skip=15, 
-                  na.strings=nullStrings, 
+data = read.table('complete_model-patient-event-logger.log',
+                  sep="\t",
+                  col.names=c('SimTime', 'Scenario', 'Replication',
+                              'Object', 'Event', 'EventTime'),
+                  skip=15,
+                  na.strings=naStrings,
                   skipNul=TRUE)
 
 data = na.omit(data)
 data$EventTime = as.numeric(data$EventTime)
-data$SimTime_h = as.numeric(data$SimTime_h)
+data$SimTime = as.numeric(data$SimTime)
 
 
-# The time between arrival to the ED and either being discharged from the ED or finishing being admitted
-# to a ward, should be less than 6 hours for 95% of patients
+# P1: 95% ED arrival -> discharge or ward stay < 6 hours
+P1 = data |>
+  group_by(Scenario, Replication, Object) |>
+  summarise(TimeDiff = min(EventTime[Event %in% c('Wards.ward-stay', 'patient-leave')]) - 
+            min(EventTime[Event %in% c('ED.wait-to-register', 'ED.wait-for-triage', 'ED.wait-for-consultation')]), 
+            .groups = 'drop') |>
+  select(Scenario, Replication, TimeDiff)
 
-# Only works with the filter on line 31, and the na.rm on line 34 (need to look at)
-P1 = data %>%
-  group_by(Replication, Object) %>%
-  reframe(
-    first_event_time = first(EventTime),
-    end_event_time = first(EventTime[Event %in% c("Wards.ward-stay", "patient-leave")]),
-    time_diff = end_event_time - first_event_time,
-    .groups = 'drop'
-  )
 
-P1$time_diff = sort(P1$time_diff)
-P1$time_diff %>% quantile(P1$time_diff, probs=0.95, na.rm=TRUE)
+# P1: Raw quantiles (quantile for whole scenario i.e. irrespective of replication)
+P1 |>
+  group_by(Scenario) |>
+  summarise(Quantile = quantile(TimeDiff, 0.95))
 
-# 0.1037965
+# P1: 95% CI for quantiles
+P1 |>
+  group_by(Scenario, Replication) |>
+  summarise(Quantile = quantile(TimeDiff, 0.95), .groups = "drop") |>
+  group_by(Scenario) |>
+  summarise(lower95CI = t.test(Quantile)$conf.int[1], mean = mean(Quantile),
+            upper95CI = t.test(Quantile)$conf.int[2])
 
-# The time between needing to be observed and starting an observation in the ED, should be less than 2
-# minutes on average.
-P2 = data %>% arrange(Object, EventTime)
-P2 = P2 %>%
-  group_by(Replication,Object) %>%
-  mutate(next_event = lead(Event), 
-         next_event_time = lead(EventTime)) %>%
-  filter(next_event == "ED.observation")
 
-P2 = P2 %>%
-  mutate(time_diff = next_event_time - EventTime - 0.5)
+# P2: Average ED need observing -> being observed < 2 mins
+P2 = data |>
+  group_by(Scenario, Replication, Object) |>
+  mutate(EventEnd = lead(EventTime)) |>
+  filter(Event %in% c('ED.observation', 'PatientTransit.dropoff', 'ED.triage') | row_number() == 1) |>
+  mutate(ObsWaitTime = if_else(lag(Event) == 'ED.wait-for-consultation', 
+                               (EventTime - lag(EventTime)) * 60, 
+                               (EventTime - lag(EventEnd + 0.5)) * 60)) |>
+  filter(Event == 'ED.observation') |>
+  ungroup() |>
+  select(Scenario, Replication, ObsWaitTime)
 
-mean(P2$time_diff)
+# P2: CI for averages
+P2 |>
+  group_by(Scenario) |>
+  summarise(lower95CI = t.test(ObsWaitTime)$conf.int[1], mean = mean(ObsWaitTime),
+            upper95CI = t.test(ObsWaitTime)$conf.int[2])
 
-#0.01523401
 
-# The time between requesting a transit (starting to wait for an orderly to be assigned) and starting being
-# picked up, should be less than 20 minutes on average
-P3 = data %>%
-  group_by(Replication, Object) %>%
-  reframe(
-    first_event_time = first(EventTime[Event %in% c("PatientTransit.wait-for-assignment")]),
-    end_event_time = first(EventTime[Event %in% c("PatientTransit.pickup")]),
-    time_diff = end_event_time - first_event_time,
-    .groups = 'drop'
-  )
+# P3: Average need pickup -> pickup less < 20 mins
+P3 = data |>
+  group_by(Scenario, Replication) |>
+  filter(Event %in% c('PatientTransit.wait-for-assignment', 'PatientTransit.pickup')) |>
+  mutate(WaitTime = (EventTime - lag(EventTime)) * 60) |>
+  filter(Event == 'PatientTransit.pickup') |>
+  select(Scenario, Replication, WaitTime)
 
-mean(P3$time_diff)
+# P3: CI for averages
+P3 |>
+  group_by(Scenario) |>
+  summarise(lower95CI = t.test(WaitTime)$conf.int[1], mean = mean(WaitTime),
+            upper95CI = t.test(WaitTime)$conf.int[2])
 
-#0.1561577
 
-# The time between needing to be observed and starting an observation in the Wards, should be less than
-# 15 minutes 95% of the time.
-P4 = data %>% arrange(Object, EventTime)
-P4 = P4 %>%
-  group_by(Replication,Object) %>%
-  mutate(next_event = lead(Event), 
-         next_event_time = lead(EventTime)) %>%
-  filter(next_event == "Wards.observation")
+# P4: Average ward need observing -> being observed < 15 mins
+P4 = data |>
+  group_by(Scenario, Replication) |>
+  mutate(EventEnd = lead(EventTime)) |>
+  filter(Event %in% c('Wards.admission', 'Wards.observation')) |>
+  mutate(ObsWaitTime = (EventTime - lag(EventEnd + 2)) * 60) |>
+  filter(Event == 'Wards.observation') |>
+  select(Scenario, Replication, ObsWaitTime)
 
-P4 = P4 %>%
-  mutate(time_diff = next_event_time - EventTime - 2)
+# P4: Raw quantiles (quantile for whole scenario i.e. irrespective of replication)
+P4 |>
+  group_by(Scenario) |>
+  summarise(Quantile = quantile(ObsWaitTime, 0.95))
 
-quantile(P4$time_diff, 0.95)
+# P4: CI for quantiles
+P4 |>
+  group_by(Scenario, Replication) |>
+  summarise(Quantile = quantile(ObsWaitTime, 0.95), .groups = "drop") |>
+  group_by(Scenario) |>
+  summarise(lower95CI = t.test(Quantile)$conf.int[1], mean = mean(Quantile),
+            upper95CI = t.test(Quantile)$conf.int[2])
 
-#      95% 
-#0.2058915
 
-# The time spent waiting for a test should be less than 5 minutes on average
-P5 = data %>%
-  filter(Event %in% c("Wards.wait-for-test", "Wards.perform-test")) %>%
-  group_by(Replication, Object) %>%
-  reframe(time_diff = diff(range(EventTime[Event %in% c("Wards.wait-for-test", "Wards.perform-test")])),
-            .groups = 'drop')
+# P5: Waiting for test < 5 mins
+P5 = data |>
+  group_by(Scenario, Replication) |>
+  filter(Event %in% c('Wards.wait-for-test', 'Wards.perform-test')) |>
+  mutate(WaitTime = (EventTime - lag(EventTime)) * 60) |>
+  filter(Event == 'Wards.perform-test') |>
+  select(Scenario, Replication, WaitTime)
 
-mean(P5$time_diff)
-# 0.1037965
+# P5: CI for averages
+P5 |>
+  group_by(Scenario) |>
+  summarise(lower95CI = t.test(WaitTime)$conf.int[1], mean = mean(WaitTime),
+            upper95CI = t.test(WaitTime)$conf.int[2])
